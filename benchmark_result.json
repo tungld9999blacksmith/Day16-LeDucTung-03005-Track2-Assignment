@@ -1,0 +1,15 @@
+{
+    "data_load_seconds": 2.4772,
+    "split": "train=0.6, val=0.15, test=0.25",
+    "seed": 42,
+    "training_seconds": 5.3836,
+    "best_iteration": 1,
+    "auc_roc": 0.9003,
+    "accuracy": 0.9988,
+    "precision": 0.999,
+    "recall": 0.9988,
+    "f1": 0.9989,
+    "latency_1_row_mili_seconds": 1.1996,
+    "latency_iterations": 1000,
+    "throughput_1000_rows_per_seconds": 663133.49
+}

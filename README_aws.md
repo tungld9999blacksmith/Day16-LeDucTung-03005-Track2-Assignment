@@ -109,11 +109,15 @@ gpu_private_ip = "10.0.1x.x"
 `gpu_private_ip` chính là IP private của Compute Node (CPU) bạn vừa tạo — tên biến giữ nguyên từ hạ tầng dùng chung với phần GPU tùy chọn. `endpoint_url`/`alb_dns_name` chỉ có ý nghĩa nếu bạn làm Phụ lục GPU + LLM ở cuối bài; ở luồng CPU bạn có thể bỏ qua hai giá trị này.
 
 ### Bước 4.1: SSH vào Compute Node qua Bastion Host
+Private key `lab-key` chỉ nằm trên máy của bạn, **không** có trên Bastion, nên nếu SSH vào Bastion rồi gõ `ssh ubuntu@<CPU_PRIVATE_IP>` sẽ bị lỗi `Permission denied (publickey)`. Hãy dùng Bastion làm jump host, chạy lệnh dưới đây ngay từ máy của bạn (trong thư mục `terraform`):
 ```bash
-# SSH vào Bastion Host
-ssh -i lab-key ubuntu@<BASTION_PUBLIC_IP>
-
-# Từ Bastion, SSH vào Compute Node (dùng IP private ở trên)
+ssh -i lab-key -o ProxyCommand="ssh -i lab-key -W %h:%p ubuntu@<BASTION_PUBLIC_IP>" ubuntu@<CPU_PRIVATE_IP>
+```
+Cách khác (Linux/macOS, hoặc Windows đã bật dịch vụ `ssh-agent`): forward agent qua Bastion.
+```bash
+ssh-add lab-key
+ssh -A ubuntu@<BASTION_PUBLIC_IP>
+# Từ Bastion:
 ssh ubuntu@<CPU_PRIVATE_IP>
 ```
 
@@ -161,16 +165,16 @@ Chạy script và điền kết quả vào bảng:
 
 | Metric | Kết quả |
 |---|---|
-| Thời gian load data | |
-| Thời gian training | |
-| Best iteration | |
-| AUC-ROC | |
-| Accuracy | |
-| F1-Score | |
-| Precision | |
-| Recall | |
-| Inference latency (1 row) | |
-| Inference throughput (1000 rows) | |
+| Thời gian load data | 2.4772s |
+| Thời gian training | 5.3836s |
+| Best iteration | 1 |
+| AUC-ROC | 0.9003 |
+| Accuracy | 0.9988 |
+| F1-Score | 0.9989 |
+| Precision | 0.9999 |
+| Recall | 0.9988 |
+| Inference latency (1 row) | 1.1996ms |
+| Inference throughput (1000 rows) | 663133.49 row/s |
 
 ---
 
@@ -222,6 +226,16 @@ Chỉ áp dụng nếu bạn đã làm Phụ lục GPU + LLM ở cuối bài. Ki
 6. **Báo cáo ngắn** (5-10 dòng): nhận xét về kết quả training time, AUC, inference speed trên CPU.
 
 *(Nếu bạn làm thêm Phụ lục GPU + LLM, có thêm các mục nộp bài riêng — xem cuối Phụ lục.)*
+
+### 6.6: Báo cáo ngắn
+
+Benchmark chạy trên EC2 `t3.medium` (2 vCPU, 4 GB RAM), dataset Credit Card Fraud (284,807 dòng, 0.17% gian lận), chia train/val/test = 60/15/25 với `stratify`.
+
+- **Training time:** khoảng 2.9s huấn luyện thực tế. Con số 5.28s trong `benchmark_result.json` gộp cả 2.37s load CSV vì script không reset bộ đếm thời gian. Với ~170K dòng thì 2 vCPU là đủ, không cần GPU cho LightGBM ở quy mô này.
+- **AUC-ROC = 0.90:** khá nhưng thấp hơn mức ~0.97+ thường thấy với dataset này. Nguyên nhân là `best_iteration = 1`: early stopping dừng ngay sau cây đầu tiên, vì với tham số mặc định và dữ liệu mất cân bằng nặng, validation logloss tăng ngay từ vòng 2. Model gần như chưa được huấn luyện.
+- **Accuracy/Precision/Recall/F1 ≈ 0.999:** gây hiểu nhầm. Một model đoán "không gian lận" cho mọi giao dịch đã đạt accuracy 99.83%, và các metric `weighted` bị lớp đa số chi phối. Nên báo cáo precision/recall của riêng lớp gian lận (class 1) hoặc PR-AUC.
+- **Inference:** latency 1 dòng ≈ 1.22 **ms** (field `latency_1_row_seconds` thực ra đang lưu mili-giây). Throughput ≈ 640K dòng/giây (1000 dòng mất ~1.6 ms). Phần lớn latency của 1 dòng là overhead gọi `predict` qua pandas/sklearn, không phải thời gian tính toán của cây. Vì vậy dự đoán theo batch hiệu quả hơn rất nhiều.
+- **Kết luận:** CPU nhỏ hoàn toàn đủ để train và serve LightGBM real-time cho bài toán này với chi phí ~$0.04/giờ. Cần cải thiện chất lượng model bằng cách xử lý mất cân bằng lớp (`scale_pos_weight` hoặc `is_unbalance=True`), giảm `learning_rate`, và early stopping theo AUC thay vì logloss.
 
 ---
 
